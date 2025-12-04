@@ -30,3 +30,4 @@ venv.bak/
 .vscode/
 .idea/
 .DS_Store
+.conda_env
