@@ -1,0 +1,27 @@
+[project]
+name = "rmlst-cli"
+version = "0.1.0"
+description = "rmlst-cli dev environment"
+authors = ["Povilas Matusevicius <pmat@ssi.dk>"]
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64", "osx-64", "osx-arm64", "win-64"]
+
+[dependencies]
+python = ">=3.9,<3.15"
+click = "*"
+requests = "*"
+biopython = "*"
+hatch = "*"
+hatch-vcs = "*"
+pytest = "*"
+requests-mock = "*"
+ruff = "*"
+black = "*"
+mypy = "*"
+
+[tasks]
+test = "pytest -q"
+lint = "ruff check ."
+fmt = "black ."
+typecheck = "mypy src/rmlst_cli"
+build = "hatch build"
