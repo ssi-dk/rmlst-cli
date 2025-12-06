@@ -1,6 +1,7 @@
 import json
 from typing import Dict, Any
 
+
 def extract_species(api_json: Dict[str, Any]) -> str:
     """
     Extracts species from the API JSON response.
@@ -28,7 +29,7 @@ def extract_species(api_json: Dict[str, Any]) -> str:
         return ""
 
     # Deduplicate while keeping max support for each taxon
-    unique_species = {}
+    unique_species: dict[str, float] = {}
     for taxon, support in species_list:
         if taxon in unique_species:
             unique_species[taxon] = max(unique_species[taxon], support)
@@ -40,11 +41,13 @@ def extract_species(api_json: Dict[str, Any]) -> str:
 
     return ",".join([s[0] for s in sorted_species])
 
+
 def format_json(data: Any) -> str:
     """
     Format data as pretty JSON with 2-space indent.
     """
     return json.dumps(data, indent=2)
+
 
 def format_tsv_row(file_name: str, value: str) -> str:
     """
@@ -56,5 +59,5 @@ def format_tsv_row(file_name: str, value: str) -> str:
     norm_value = value.replace("\t", " ").replace("\n", " ")
     # Strip outer whitespace
     norm_value = norm_value.strip()
-    
+
     return f"{file_name}\t{norm_value}"
