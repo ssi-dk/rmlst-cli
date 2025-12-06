@@ -18,7 +18,7 @@ def test_cli_version(runner):
 def test_cli_no_args(runner):
     result = runner.invoke(main, [])
     assert result.exit_code == 2
-    assert "One of --fasta or --dir must be provided" in result.stderr
+    assert "One of --fasta or --dir must be provided" in result.output
 
 
 def test_cli_single_file_success(runner, tmp_path):
