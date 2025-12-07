@@ -1,15 +1,19 @@
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 
-def extract_species(api_json: Dict[str, Any]) -> str:
+def extract_species_data(api_json: Dict[str, Any]) -> List[Tuple[str, int]]:
     """
-    Extracts species from the API JSON response.
-    Returns a comma-separated string of unique species, ordered by descending support/probability.
+    Extracts species and support from the API JSON response.
+    Returns a list of (species, support) tuples, ordered by descending support.
     """
     predictions = api_json.get("taxon_prediction", [])
     if not predictions:
-        return ""
+        # Fallback to fields.species if taxon_prediction is empty/missing
+        fields_species = api_json.get("fields", {}).get("species")
+        if fields_species:
+            return [(fields_species, 100)]  # Assume 100% support for fields.species
+        return []
 
     # Collect (taxon, support) tuples
     # Support might be missing, default to 0
@@ -26,7 +30,7 @@ def extract_species(api_json: Dict[str, Any]) -> str:
             species_list.append((taxon, support))
 
     if not species_list:
-        return ""
+        return []
 
     # Deduplicate while keeping max support for each taxon
     unique_species: dict[str, float] = {}
@@ -39,7 +43,31 @@ def extract_species(api_json: Dict[str, Any]) -> str:
     # Sort by support desc, then taxon asc
     sorted_species = sorted(unique_species.items(), key=lambda x: (-x[1], x[0]))
 
-    return ",".join([s[0] for s in sorted_species])
+    # Convert support to int
+    return [(s[0], int(s[1])) for s in sorted_species]
+
+
+def extract_species(api_json: Dict[str, Any]) -> str:
+    """
+    Extracts species from the API JSON response.
+    Returns a comma-separated string of unique species, ordered by descending support/probability.
+    """
+    data = extract_species_data(api_json)
+    return ",".join([s[0] for s in data])
+
+
+def extract_species_and_support(api_json: Dict[str, Any]) -> Tuple[str, str]:
+    """
+    Extracts species and support strings.
+    Returns (species_str, support_str).
+    """
+    data = extract_species_data(api_json)
+    if not data:
+        return "", ""
+
+    names = ",".join([s[0] for s in data])
+    supports = ",".join([str(s[1]) for s in data])
+    return names, supports
 
 
 def format_json(data: Any) -> str:
@@ -47,17 +75,3 @@ def format_json(data: Any) -> str:
     Format data as pretty JSON with 2-space indent.
     """
     return json.dumps(data, indent=2)
-
-
-def format_tsv_row(file_name: str, value: str) -> str:
-    """
-    Format a TSV row: file<TAB>value.
-    Normalizes value (tabs/newlines -> space).
-    """
-    # Normalize value
-    # Replace tab and newline with space
-    norm_value = value.replace("\t", " ").replace("\n", " ")
-    # Strip outer whitespace
-    norm_value = norm_value.strip()
-
-    return f"{file_name}\t{norm_value}"

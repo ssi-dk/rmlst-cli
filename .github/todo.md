@@ -88,8 +88,7 @@ This is a living implementation checklist. Keep it up to date as work progresses
 - [x] Implement TSV output helpers:
   - [x] Header line generation for `file<TAB>HEADER`.
   - [x] Per-row formatting with value normalization:
-    - [x] Replace `	`/`
-` in species string with `" "`.
+    - [x] Replace `	`/` ` in species string with `" "`.
     - [x] Strip outer whitespace.
 
 ## 6. I/O & directory logic (`io.py`)
@@ -213,3 +212,12 @@ This is a living implementation checklist. Keep it up to date as work progresses
   - [x] Python API usage.
 - [x] Confirm README matches behavior defined in `spec.md`.
 - [x] Add link to spec in README for internal reference (optional).
+
+## 13. Recent enhancements
+
+- [x] Enhanced `--species-only` to output two columns (species and support).
+- [x] Removed redundant `--tsv` option.
+- [x] Added `--force` option to allow overwriting existing output files.
+- [x] Fixed header parsing for `--species-only` to accept space/comma-separated pairs (e.g., "Species Support" or "species,support").
+- [x] Updated Galaxy XML wrapper to use `--force` and support two-column species output.
+- [x] Ensured compatibility with both rMLST API JSON response formats (taxon_prediction and fields.species fallback).

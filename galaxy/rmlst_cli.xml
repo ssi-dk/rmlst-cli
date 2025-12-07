@@ -1,0 +1,100 @@
+<tool id="rmlst_cli" name="rMLST Identify" version="1.0+galaxy0">
+    <description>Identify species using the rMLST API</description>
+    <requirements>
+        <requirement type="package" version="1.0">rmlst-cli</requirement>
+    </requirements>
+    <command detect_errors="exit_code"><![CDATA[
+        rmlst 
+        --fasta '$input_fasta'
+        --output '$output_file'
+        
+        #if $mode_cond.mode == 'species':
+            --species-only
+            #if $mode_cond.header:
+                '$mode_cond.header'
+            #end if
+        #end if
+
+        $trim_to_5000
+        $graceful
+        --retries $retries
+        --retry-delay $retry_delay
+        --force
+        
+        #if $uri:
+            --uri '$uri'
+        #end if
+    ]]></command>
+    <inputs>
+        <param name="input_fasta" type="data" format="fasta" label="Input FASTA file" />
+        
+        <conditional name="mode_cond">
+            <param name="mode" type="select" label="Output Format">
+                <option value="json" selected="true">JSON</option>
+                <option value="species">Species Name Only</option>
+            </param>
+            <when value="json"/>
+            <when value="species">
+                <param name="header" type="text" optional="true" label="Custom Header" help="Optional headers for species and support columns (e.g., 'Species Support')" />
+            </when>
+        </conditional>
+
+        <param name="trim_to_5000" type="boolean" truevalue="--trim-to-5000" falsevalue="" checked="false" label="Trim to 5000 contigs" help="Automatically keep only the 5000 largest contigs if the file exceeds the limit." />
+        <param name="graceful" type="boolean" truevalue="--graceful" falsevalue="" checked="false" label="Graceful failure" help="Do not exit with error on API failures, output empty result instead." />
+        
+        <section name="advanced" title="Advanced Options" expanded="false">
+            <param name="retries" type="integer" value="3" min="0" label="Number of retries" />
+            <param name="retry_delay" type="integer" value="60" min="0" label="Retry delay (seconds)" />
+            <param name="uri" type="text" optional="true" label="Custom API URI" help="Leave empty to use the default rMLST API." />
+        </section>
+    </inputs>
+    <outputs>
+        <data name="output_file" format="json" label="${tool.name} on ${on_string}">
+            <change_format>
+                <when input="mode_cond.mode" value="species" format="tabular" />
+            </change_format>
+        </data>
+    </outputs>
+    <tests>
+        <test>
+            <param name="input_fasta" value="real_valid.fasta" />
+            <param name="mode" value="json" />
+            <output name="output_file" file="output_json.json" ftype="json" compare="contains" />
+        </test>
+        <test>
+            <param name="input_fasta" value="real_valid.fasta" />
+            <param name="mode" value="species" />
+            <output name="output_file" file="output_species.txt" ftype="tabular" />
+        </test>
+    </tests>
+    <help><![CDATA[
+**rMLST CLI**
+
+This tool identifies species from FASTA files using the PubMLST rMLST API.
+
+**Inputs**
+
+*   **FASTA file**: A DNA sequence file.
+
+**Outputs**
+
+*   **JSON**: Full API response.
+*   **Species Only**: Species name and support percentage in two columns.
+
+**Limits**
+
+The rMLST API has a limit of 5,000 contigs. Use the "Trim to 5000 contigs" option to automatically filter your input if necessary.
+    ]]></help>
+    <citations>
+        <citation type="bibtex">
+@misc{rmlst_cli,
+  author = {Povilas Matusevicius},
+  title = {rmlst-cli},
+  year = {2025},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/ssi-dk/rmlst-cli}}
+}
+        </citation>
+    </citations>
+</tool>

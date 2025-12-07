@@ -1,0 +1,46 @@
+{% set name = "rmlst-cli" %}
+{% set version = "1.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/rmlst_cli-{{ version }}.tar.gz
+  sha256: 881b373602d7ab2b008fa28e1dc76d7fc8249926fe58e3e631bc4613c6da1642
+
+build:
+  number: 0
+  noarch: python
+  script_env:
+    - SETUPTOOLS_SCM_PRETEND_VERSION={{ version }}
+  script: {{ PYTHON }} -m pip install . -vv
+  entry_points:
+    - rmlst = rmlst_cli.cli:main
+    - rmlst-cli = rmlst_cli.cli:main
+
+requirements:
+  host:
+    - python >=3.9,<3.15
+    - pip
+    - hatchling
+    - hatch-vcs
+    - git
+  run:
+    - python >=3.9,<3.15
+    - click
+    - requests
+    - biopython
+
+test:
+  imports:
+    - rmlst_cli
+  commands:
+    - rmlst --version
+    - rmlst --help
+
+about:
+  home: https://github.com/ssi-dk/rmlst-cli
+  summary: rmlst-cli is a simple tool to use the rMLST API through the command line.
+  license: MIT
+  license_file: LICENSE

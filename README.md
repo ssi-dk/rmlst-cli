@@ -36,18 +36,12 @@ rmlst -d ./fastas/ -O ./results/
   rmlst -f sample.fasta
   ```
 
-- **Species only**:
+- **Species only** (two columns: species and support):
 
   ```bash
   rmlst -f sample.fasta --species-only
-  # With header
-  rmlst -f sample.fasta --species-only="Species"
-  ```
-
-- **TSV**:
-
-  ```bash
-  rmlst -f sample.fasta --tsv
+  # With custom headers
+  rmlst -f sample.fasta --species-only="Species Support"
   ```
 
 ## Examples
@@ -94,6 +88,7 @@ for basename, result in api.identify_dir("./fastas/", graceful=True):
     print(f"{basename}: {result}")
 
 # Extract species
-from rmlst_cli.formats import extract_species
-species = extract_species(result)
+from rmlst_cli.formats import extract_species, extract_species_and_support
+species = extract_species(result)  # Comma-separated string
+species_names, support_values = extract_species_and_support(result)  # Separate strings
 ```

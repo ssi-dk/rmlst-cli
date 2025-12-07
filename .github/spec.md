@@ -74,11 +74,10 @@ If directory contains **no** `.fa`/`.fasta` files:
 
 ### 2.3 Output modes
 
-The tool supports three mutually exclusive output modes:
+The tool supports two mutually exclusive output modes:
 
 1. **Full JSON** (default)
 2. **Species-only**
-3. **TSV**
 
 #### 2.3.1 Mode selection options
 
@@ -87,15 +86,8 @@ The tool supports three mutually exclusive output modes:
     - Interpret as “species-only” mode with default header (when applicable).
   - If provided **with** a value:
     - Interpret as “species-only” mode with custom header (applies to TSV-like behavior as described below).
-- `--tsv[=HEADER]`
-  - If provided without value:
-    - TSV mode with default column header `species`.
-  - If provided with value:
-    - TSV mode with given header.
-- `--species-only` and `--tsv` are **mutually exclusive**:
-  - If both are provided → error, exit code **2**.
 
-#### 2.3.2 Species extraction (used for species-only + TSV modes)
+#### 2.3.2 Species extraction (used for species-only mode)
 
 Given the raw API JSON for a file:
 
@@ -176,6 +168,13 @@ We do **not** enforce extension-type consistency when the user explicitly specif
       - If `rmlst_summary.tsv` exists, it **is overwritten** when running again.
 
 - Skipped files are counted as **skipped**, not failed, and do not cause a non-zero exit code.
+
+#### 2.4.4 Overwrite behavior
+
+- `-f, --force, --overwrite`
+  - If provided, the "no overwrites" policy is disabled.
+  - Existing files are overwritten without warning.
+  - `[SKIP]` messages are not printed.
 
 ---
 

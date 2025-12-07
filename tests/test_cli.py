@@ -38,12 +38,14 @@ def test_cli_single_file_species_only(runner, tmp_path):
     f = tmp_path / "test.fasta"
     f.write_text(">seq1\nATGC")
 
-    mock_resp = {"taxon_prediction": [{"taxon": "Species X"}]}
+    mock_resp = {"taxon_prediction": [{"taxon": "Species X", "support": 95}]}
 
     with patch("rmlst_cli.api.identify", return_value=mock_resp):
         result = runner.invoke(main, ["-f", str(f), "--species-only"])
         assert result.exit_code == 0
-        assert result.output.strip() == "Species X"
+        lines = result.output.strip().split("\n")
+        assert lines[0] == "species\tsupport"
+        assert lines[1] == "Species X\t95"
 
 
 def test_cli_dir_success(runner, tmp_path):
@@ -73,3 +75,42 @@ def test_cli_dir_wrapped_mode(runner, tmp_path):
         assert result.exit_code == 0
         assert '"file": "a.fasta"' in result.output
         assert '"result":' in result.output
+
+
+def test_cli_dir_species_only(runner, tmp_path):
+    d = tmp_path / "subdir"
+    d.mkdir()
+    (d / "a.fasta").write_text(">seq1\nATGC")
+    (d / "b.fasta").write_text(">seq2\nATGC")
+
+    mock_resp = {"taxon_prediction": [{"taxon": "Species X", "support": 95}]}
+
+    with patch("rmlst_cli.api.identify", return_value=mock_resp):
+        result = runner.invoke(main, ["-d", str(d), "--species-only"])
+        assert result.exit_code == 0
+        lines = result.output.strip().split("\n")
+        # Header
+        assert lines[0] == "file\tspecies\tsupport"
+        # Rows (sorted by filename)
+        assert "a.fasta\tSpecies X\t95" in lines
+        assert "b.fasta\tSpecies X\t95" in lines
+
+
+def test_cli_force_overwrite(runner, tmp_path):
+    f = tmp_path / "test.fasta"
+    f.write_text(">seq1\nATGC")
+    out = tmp_path / "output.txt"
+    out.write_text("existing content")
+
+    mock_resp = {"taxon_prediction": [{"taxon": "Species X", "support": 95}]}
+
+    with patch("rmlst_cli.api.identify", return_value=mock_resp):
+        result = runner.invoke(
+            main, ["-f", str(f), "--species-only", "--output", str(out), "--force"]
+        )
+        assert result.exit_code == 0
+        # Should have overwritten
+        content = out.read_text()
+        lines = content.strip().split("\n")
+        assert lines[0] == "species\tsupport"
+        assert lines[1] == "Species X\t95"

@@ -45,6 +45,29 @@ def handle_exception(e: Exception, debug: bool):
         print_error(f"unexpected error: {e}", EXIT_UNEXPECTED, debug)
 
 
+def get_species_headers(header_str: str) -> tuple[str, str]:
+    """
+    Parse header string into two headers for species and support columns.
+    Accepts space or comma separated values.
+    If only one value provided, uses it for species and appends 'support'.
+    """
+    if not header_str:
+        return "species", "support"
+
+    # Split by comma first, then by space if no comma
+    parts = header_str.split(",")
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+
+    parts = header_str.split()
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    elif len(parts) == 1:
+        return parts[0], "support"
+    else:
+        return "species", "support"
+
+
 def get_exit_code(e: Exception) -> int:
     if isinstance(e, InvalidFastaError):
         return EXIT_INPUT_ERROR
@@ -81,14 +104,12 @@ def get_exit_code(e: Exception) -> int:
     flag_value="SPECIES_DEFAULT",
     help="Output species only.",
 )
-@click.option(
-    "--tsv", is_flag=False, flag_value="SPECIES_DEFAULT", help="Output TSV format."
-)
 @click.option("-u", "--uri", default=DEFAULT_URI, help="rMLST API URI.")
 @click.option("--retries", default=3, help="Number of retries.")
 @click.option("--retry-delay", default=60, help="Delay between retries in seconds.")
 @click.option("--trim-to-5000", is_flag=True, help="Trim to 5000 contigs.")
 @click.option("--graceful", is_flag=True, help="Graceful failure mode.")
+@click.option("--force", is_flag=True, help="Force overwrite of existing output files.")
 @click.option("--debug", is_flag=True, help="Enable debug output.")
 @click.version_option(__version__, prog_name="rmlst", message="%(prog)s %(version)s")
 def main(
@@ -97,12 +118,12 @@ def main(
     output,
     outdir,
     species_only,
-    tsv,
     uri,
     retries,
     retry_delay,
     trim_to_5000,
     graceful,
+    force,
     debug,
 ):
     """rmlst-cli: rMLST API client."""
@@ -113,10 +134,6 @@ def main(
         sys.exit(EXIT_INPUT_ERROR)
     if not fasta and not directory:
         click.echo("Error: One of --fasta or --dir must be provided.", err=True)
-        sys.exit(EXIT_INPUT_ERROR)
-
-    if species_only and tsv:
-        click.echo("Error: --species-only and --tsv are mutually exclusive.", err=True)
         sys.exit(EXIT_INPUT_ERROR)
 
     if output and outdir:
@@ -130,9 +147,6 @@ def main(
         mode = "species"
         if species_only != "SPECIES_DEFAULT":
             header = species_only
-    elif tsv:
-        mode = "tsv"
-        header = tsv if tsv != "SPECIES_DEFAULT" else "species"
 
     # Unify output/outdir
     out_path = output or outdir
@@ -149,6 +163,7 @@ def main(
                 retry_delay,
                 trim_to_5000,
                 graceful,
+                force,
                 debug,
             )
         else:
@@ -162,6 +177,7 @@ def main(
                 retry_delay,
                 trim_to_5000,
                 graceful,
+                force,
                 debug,
             )
 
@@ -181,19 +197,18 @@ def handle_single_file(
     retry_delay,
     trim_to_5000,
     graceful,
+    force,
     debug,
 ):
     final_out_path = out_path
     if out_path and os.path.isdir(out_path):
         suffix = ".json"
-        if mode == "tsv":
-            suffix = ".tsv"
         if mode == "species":
             suffix = ".txt"  # Default for species-only
         final_out_path = io.derive_output_path(fasta_path, out_path, suffix)
 
     # Check overwrite
-    if final_out_path and os.path.exists(final_out_path):
+    if final_out_path and os.path.exists(final_out_path) and not force:
         click.echo(f"[SKIP] {os.path.basename(final_out_path)} (exists)", err=True)
         sys.exit(EXIT_SUCCESS)
 
@@ -217,15 +232,10 @@ def handle_single_file(
     if mode == "json":
         content = formats.format_json(result)
     else:
-        species = formats.extract_species(result)
-        if mode == "species":
-            if header:
-                content = f"{header}\n{species}"
-            else:
-                content = species
-        elif mode == "tsv":
-            h = header if header else "species"
-            content = f"{h}\n{species}"
+        # mode == "species"
+        names, supports = formats.extract_species_and_support(result)
+        species_header, support_header = get_species_headers(header)
+        content = f"{species_header}\t{support_header}\n{names}\t{supports}"
 
     # Write output
     if final_out_path:
@@ -244,6 +254,7 @@ def handle_directory(
     retry_delay,
     trim_to_5000,
     graceful,
+    force,
     debug,
 ):
     if out_path:
@@ -268,7 +279,7 @@ def handle_directory(
     results = []
 
     summary_path = None
-    if out_path and (mode == "tsv" or mode == "species"):
+    if out_path and mode == "species":
         summary_path = os.path.join(out_path, "rmlst_summary.tsv")
 
     for i, file_path in enumerate(files):
@@ -279,7 +290,7 @@ def handle_directory(
 
         if out_path and mode == "json":
             derived = io.derive_output_path(file_path, out_path, ".json")
-            if os.path.exists(derived):
+            if os.path.exists(derived) and not force:
                 click.echo(f"[SKIP] {os.path.basename(derived)} (exists)", err=True)
                 skipped_count += 1
                 continue
@@ -350,15 +361,18 @@ def handle_directory(
         )
 
         if mode != "json":
-            h = header if header else "species"
-            lines = [f"file\t{h}"]
+            # mode == "species"
+            species_header, support_header = get_species_headers(header)
+            lines = [f"file\t{species_header}\t{support_header}"]
             for item in results:
                 if item["error"] and not graceful:
                     continue
-                species = ""
+                species, support = "", ""
                 if item["result"]:
-                    species = formats.extract_species(item["result"])
-                lines.append(formats.format_tsv_row(item["basename"], species))
+                    species, support = formats.extract_species_and_support(
+                        item["result"]
+                    )
+                lines.append(f"{item['basename']}\t{species}\t{support}")
 
             content = "\n".join(lines)
             io.atomic_write(summary_path, content)
@@ -398,16 +412,21 @@ def handle_directory(
             click.echo(formats.format_json(json_out))
 
         else:
-            h = header if header else "species"
-            click.echo(f"file\t{h}")
-            for item in results:
-                if item["error"] and not graceful:
-                    continue
-
-                species = ""
-                if item["result"]:
-                    species = formats.extract_species(item["result"])
-
-                click.echo(formats.format_tsv_row(item["basename"], species))
+            if mode == "species":
+                # Two columns: species and support
+                species_header, support_header = get_species_headers(header)
+                click.echo(f"file\t{species_header}\t{support_header}")
+                for item in results:
+                    if item["error"] and not graceful:
+                        continue
+                    species, support = "", ""
+                    if item["result"]:
+                        species, support = formats.extract_species_and_support(
+                            item["result"]
+                        )
+                    click.echo(f"{item['basename']}\t{species}\t{support}")
+            else:
+                # JSON mode already handled above
+                pass
 
     sys.exit(highest_exit_code if not graceful else 0)
