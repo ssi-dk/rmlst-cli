@@ -7,7 +7,7 @@ package:
 
 source:
   url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/rmlst_cli-{{ version }}.tar.gz
-  sha256: 881b373602d7ab2b008fa28e1dc76d7fc8249926fe58e3e631bc4613c6da1642
+  sha256: 4720ae922157ea0195a862e6bb486e8fe6c4fd334ce9ac23080c7326733c27de
 
 build:
   number: 0
