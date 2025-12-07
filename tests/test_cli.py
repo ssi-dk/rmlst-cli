@@ -2,6 +2,7 @@ import pytest
 from click.testing import CliRunner
 from unittest.mock import patch
 from rmlst_cli.cli import main
+from rmlst_cli import __version__
 
 
 @pytest.fixture
@@ -12,7 +13,7 @@ def runner():
 def test_cli_version(runner):
     result = runner.invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "rmlst 0.0.0" in result.output
+    assert f"rmlst {__version__}" in result.output
 
 
 def test_cli_no_args(runner):
