@@ -32,6 +32,9 @@ rmlst-cli = "rmlst_cli.cli:main"
 [tool.hatch.version]
 source = "vcs"
 
+[tool.hatch.build.hooks.vcs]
+version-file = "src/rmlst_cli/_version.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/rmlst_cli"]
 

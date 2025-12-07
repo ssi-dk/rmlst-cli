@@ -32,3 +32,4 @@ venv.bak/
 .DS_Store
 .conda_env
 old_rmlst
+src/rmlst_cli/_version.py
