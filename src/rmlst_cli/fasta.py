@@ -79,6 +79,9 @@ def read_and_process_fasta(
 
         norm_seq = normalize_sequence(raw_seq)
 
+        if not norm_seq:
+            raise InvalidFastaError(f"Empty sequence: {header}")
+
         if not validate_sequence(norm_seq):
             raise InvalidFastaError(f"Invalid characters in sequence: {header}")
 

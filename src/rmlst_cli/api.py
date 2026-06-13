@@ -40,10 +40,10 @@ def identify(
         TooManyContigsError,
         RmlstNetworkError,
         RmlstHttpError,
-    ) as e:
+    ):
         if graceful:
             return {}
-        raise e
+        raise
 
 
 def identify_dir(
@@ -79,7 +79,7 @@ def identify_dir(
             )
             yield basename, result
 
-        except Exception as e:
+        except Exception:
             # If identify raised, it means graceful=False (or unexpected error).
             # We should let it propagate.
-            raise e
+            raise

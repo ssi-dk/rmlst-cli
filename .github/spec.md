@@ -1,4 +1,4 @@
-# rmlst-cli Specification (v1.0)
+# rmlst-cli Specification (v1.1)
 
 ## 1. Overview
 
@@ -21,7 +21,7 @@ Turn the existing `ssi-dk/rmlst` script into a proper, installable, cross-platfo
 - Calls PubMLST rMLST species identification endpoint(s).
 - Works with single FASTA files and directories of FASTA files.
 - Enforces the 5,000-contig limit with optional trimming.
-- Provides clear JSON/TSV outputs, robust error handling, and well-documented behavior.
+- Provides clear JSON and tabular species/support outputs, robust error handling, and well-documented behavior.
 - Is distributable via **PyPI** and **Bioconda**.
 - Is installable via pip/uv/conda/pixi.
 
@@ -83,20 +83,25 @@ The tool supports two mutually exclusive output modes:
 
 - `--species-only[=HEADER]`
   - If provided **without** value:
-    - Interpret as “species-only” mode with default header (when applicable).
+    - Interpret as “species-only” mode with default headers: `species` and `support`.
   - If provided **with** a value:
-    - Interpret as “species-only” mode with custom header (applies to TSV-like behavior as described below).
+    - Interpret as “species-only” mode with custom headers.
+    - Header values may be comma-separated or whitespace-separated.
+    - If only one header value is provided, it is used for the species column and the support column defaults to `support`.
 
 #### 2.3.2 Species extraction (used for species-only mode)
 
 Given the raw API JSON for a file:
 
-- The developer must implement `extract_species(api_json: dict) -> str` with these rules:
-  - Species info is expected under something like `taxon_prediction`, likely `taxon_prediction.species`. Exact keypath must be discovered empirically from the API; the code must be written to that actual structure.
+- Species helper functions live in `rmlst_cli.formats`.
+- `extract_species(api_json: dict) -> str` and `extract_species_and_support(api_json: dict) -> tuple[str, str]` use these rules:
+  - Species info is expected under `taxon_prediction[*].taxon`.
+  - Support is expected under `taxon_prediction[*].support`; missing or invalid support defaults to `0`.
+  - If `taxon_prediction` is missing or empty, fall back to `fields.species` with support `100`.
   - If multiple species predictions exist:
     - Collect all species names.
-    - Remove duplicates.
-    - Order by **descending probability** where probabilities are available; if no probabilities, fall back to alphabetical order.
+    - Remove duplicates, keeping the maximum support value for each species.
+    - Order by **descending support**, then species name alphabetically.
     - Join with comma: `","`.
   - If no species prediction is present (e.g. no identifiers):
     - Treat this as **success**, not an error.
@@ -145,7 +150,7 @@ We want simple behavior for users but also predictable logic for the code.
 - **If the path does not exist:**
   - In **directory mode**, treat `--output` / `--outdir` as a **directory** (create it).
   - In **single-file mode**, treat `--output` as a **file** by default.
-    - If the program itself is deciding a path (e.g. default and derived files), it should prefer file extensions matching the output format (e.g. `.json` for JSON, `.tsv` for TSV).
+    - If the program itself is deciding a path, it uses `.json` for JSON and `.txt` for single-file species-only output.
     - If the user explicitly passes a name with “wrong” extension (e.g. `--output sample.txt` for JSON), the program **does not alter or reject** based on extension; it writes the correct content to that path.
 
 We do **not** enforce extension-type consistency when the user explicitly specifies a filename; we only use sensible extensions when the program derives filenames.
@@ -163,7 +168,7 @@ We do **not** enforce extension-type consistency when the user explicitly specif
     - If `--output DIR` or `--outdir DIR` and the derived per-file output already exists, same `[SKIP]` behavior for that file, exit code 0.
 
   - **Directory mode** (`--dir`):
-    - Per-file outputs (JSON): if a derived `<basename>_rmlst.json` already exists, **skip** and `[SKIP] <basename>_rmlst.json (exists)` on stderr.
+    - Per-file outputs (JSON): if a derived `<stem>.json` already exists, **skip** and `[SKIP] <stem>.json (exists)` on stderr.
     - Aggregated TSV (`rmlst_summary.tsv`, see below) is the **only file that may be overwritten**:
       - If `rmlst_summary.tsv` exists, it **is overwritten** when running again.
 
@@ -171,7 +176,7 @@ We do **not** enforce extension-type consistency when the user explicitly specif
 
 #### 2.4.4 Overwrite behavior
 
-- `-f, --force, --overwrite`
+- `--force`
   - If provided, the "no overwrites" policy is disabled.
   - Existing files are overwritten without warning.
   - `[SKIP]` messages are not printed.
@@ -192,7 +197,7 @@ We do **not** enforce extension-type consistency when the user explicitly specif
 
 - Default: print to **stdout**, unless `--output` is given.
 - If `--output` or `--outdir` is interpreted as directory:
-  - Use `<basename>_rmlst.json` as derived filename.
+  - Use `<stem>.json` as derived filename, where `<stem>` is the input filename without its extension.
 - If `--output` is interpreted as a file:
   - Write JSON to that file.
 - Graceful behavior:
@@ -259,12 +264,12 @@ The final array is printed to stdout and must be valid JSON.
 
 - **Full JSON mode**:
   - Each input FASTA gets a per-file JSON:
-    - `<basename>_rmlst.json` inside `--outdir`.
+    - `<stem>.json` inside `--outdir`.
   - No aggregated JSON summary file.
   - Stderr:
     - For each success: `[OK] <basename>`
     - For each failure: `[ERR code=<n>] <basename>: <short message>`
-    - For each skip: `[SKIP] <basename>_rmlst.json (exists)`
+    - For each skip: `[SKIP] <stem>.json (exists)`
     - Final summary line:
       - `Done: <ok> ok, <failed> failed, <skipped> skipped.`
   - Exit code:
@@ -276,45 +281,42 @@ The final array is printed to stdout and must be valid JSON.
 
 #### 3.2.1 Single-file
 
-- `--species-only` with no `--output`:
-  - Print just the species string (from `extract_species`) to stdout followed by newline.
-- `--species-only=HEADER` (single-file):
-  - Behaves like TSV one-column output:
-    - Output:
-      ```
-      HEADER
-      <species-string>
-      ```
-  - Can be written to file via `--output` / `--outdir`.
+- `--species-only` always emits two tab-separated columns: species and support.
+- With no custom header:
+  ```
+  species<TAB>support
+  <species-string><TAB><support-string>
+  ```
+- With `--species-only=HEADER`, the header is parsed into species/support headers as described in §2.3.1.
+- If `--output` or `--outdir` is interpreted as a directory:
+  - Use `<stem>.txt` as derived filename.
+- If `--output` is interpreted as a file:
+  - Write the species/support table to that file without changing its extension.
 - `--output` path semantics as per §2.4.
 - Graceful:
   - With `--graceful`:
-    - On failure, print either:
-      - If plain species-only: an empty line.
-      - If TSV style: header + empty second line.
+    - On failure, print or write the header plus an empty species/support row.
     - Exit 0.
 
 #### 3.2.2 Directory mode → stdout
 
 - TSV-like output:
   - Header row:
-    - If `--species-only` (no value): `file<TAB>species`
-    - If `--species-only=HEADER`: `file<TAB>HEADER`
+    - If `--species-only` (no value): `file<TAB>species<TAB>support`
+    - If `--species-only=HEADER`: `file<TAB><species-header><TAB><support-header>`
   - One row per file:
     - `file` = basename of the FASTA (including extension).
     - `species` = extracted species string.
-    - Tabs/newlines in species are normalized:
-      - Replace any `	` or `
-` with a single space.
-      - Trim surrounding whitespace.
+    - `support` = extracted support string.
 - Failures and graceful behavior:
   - `--graceful` **off**:
     - Failed files are **skipped** from TSV output.
-    - Errors reported on stderr.
+    - In stdout-only mode, failed files are omitted from the table and the process exits with the highest error code seen.
+    - With `--outdir`, failed files are also reported on stderr as progress lines.
   - `--graceful` **on**:
     - All files have a TSV row.
-    - Failed files have an empty species field:
-      - `file<TAB>`.
+    - Failed files have empty species and support fields:
+      - `file<TAB><TAB>`.
     - Exit 0.
 
 #### 3.2.3 Directory mode + `--outdir`
@@ -328,24 +330,13 @@ The final array is printed to stdout and must be valid JSON.
 - `--graceful`:
   - Behaves like the stdout TSV, but for the aggregated file:
     - Without `--graceful`, skip failed rows.
-    - With `--graceful`, include rows for failed files with empty species.
+    - With `--graceful`, include rows for failed files with empty species and support.
 - Exit code:
   - Highest error code among failures (0 if none; 0 if `--graceful`).
 
-### 3.3 TSV mode (`--tsv[=HEADER]`)
+### 3.3 TSV mode
 
-Same as species-only, except used explicitly for TSV; semantics mirror species-only TSV behavior:
-
-- Single-file:
-  - One-column TSV:
-    ```
-    HEADER
-    <species-string>
-    ```
-- Directory:
-  - TSV with `file<TAB>HEADER` header and matching rows.
-- Header default: `species` if not provided.
-- Normalization of tabs/newlines in values as in §3.2.
+There is no standalone `--tsv` option in the current CLI. Tabular species/support output is produced with `--species-only`.
 
 ---
 
@@ -383,24 +374,19 @@ CLI option:
 - **Headers**:
   - `Content-Type: application/json`
   - `Accept: application/json`
-  - `User-Agent: rmlst-cli/<version> (+https://github.com/ssi-dk/rmlst_cli; maintainer: pmat@ssi.dk)`
+  - `User-Agent: rmlst-cli/<version> (+https://github.com/ssi-dk/rmlst-cli; maintainer: pmat@ssi.dk)`
 
 ### 4.3 HTTP client
 
-- Baseline implementation: **requests + Biopython**.
-- Developer will also implement a **custom FASTA parser** and optionally an alternative HTTP client (e.g. `httpx`) and benchmark locally.
-  - Use single-file mode and realistic test fixtures (including a synthetic large FASTA with >5,000 contigs).
-  - Run each variant ~5 times per dataset.
-  - Compare **end-to-end** time.
-  - If one variant is ≥5% faster median, choose that variant and remove the other.
-  - If within 5%, choose the variant with **fewer dependencies**.
+- Current implementation: **requests + Biopython**.
+- A custom FASTA/parser variant and alternative HTTP clients were considered during development, but the current code keeps Biopython for parsing robustness and `requests` for HTTP.
 
 ### 4.4 Timeouts & retries
 
 **Timeouts per attempt:**
 
-- Connect timeout: 10 seconds.
-- Read timeout: 120 seconds.
+- Connect timeout: 30 seconds.
+- Read timeout: 300 seconds.
 - No user-configurable timeout flag.
 
 **Retry policy:**
@@ -487,6 +473,7 @@ CLI option:
 
 - Decodable as UTF-8.
 - At least one sequence record.
+- Each sequence record has a non-empty normalized sequence.
 - Headers present (standard FASTA format).
 - Normalized sequences contain only valid IUPAC DNA characters (after `U→T`).
 
@@ -495,6 +482,7 @@ CLI option:
 - File unreadable (permissions, missing).
 - Decoding error.
 - No sequences found.
+- Empty sequence record after normalization.
 - Sequence characters fail validation.
 - For directory mode: no matching `.fa`/`.fasta` files is treated as invalid input (exit code 2).
 
@@ -509,7 +497,7 @@ Exit code for invalid FASTA or input issues: **2**.
 - **2** – Input/usage error:
   - Invalid FASTA (see 5.3).
   - No `.fa`/`.fasta` files in directory input.
-  - Invalid combination of CLI options (e.g., both `--tsv` and `--species-only`, or `--output`+`--outdir`, or dir + output file).
+  - Invalid combination of CLI options (e.g., both `--output`+`--outdir`, or dir + output file).
 - **3** – Too many contigs (>5000) without `--trim-to-5000`.
 - **4** – Network error after all retries.
 - **5** – HTTP error (non-200) or invalid JSON.
@@ -526,12 +514,12 @@ Short, one-sentence messages:
 
 - Code 2: `invalid FASTA or no sequences`
 - Code 3: `more than 5000 contigs; use --trim-to-5000`
-- Code 4: `network error after <N> retries`
+- Code 4: `network error after retries`
 - Code 5: `HTTP error <status> or invalid JSON`
 - Code 7: `filesystem error`
 - Code 1: `unexpected error`
 
-`--debug` flag can augment this with a full traceback and (for HTTP errors) up to ~1 KB of response body.
+`--debug` flag can augment stderr with a full traceback and HTTP attempt/response timing details. Debug output must not be written to stdout because stdout may contain machine-readable JSON or tabular results.
 
 ---
 
@@ -548,16 +536,14 @@ Behavior:
 
   - **Single-file JSON**:
     - Output: `{}`.
-  - **Single-file species-only (no TSV)**:
-    - Output: empty line.
-  - **Single-file TSV species-only / TSV**:
-    - Header line + empty data line.
+  - **Single-file species-only**:
+    - Header line plus an empty species/support data line.
   - **Directory JSON**:
     - Use wrapped array format (`{"file":..., "result":{...}}`).
     - Failed files: `{"file":"<basename>", "result": null}`.
-  - **Directory TSV**:
+  - **Directory species-only**:
     - All files get a row.
-    - Failed files: `file<TAB>` (empty species).
+    - Failed files: `file<TAB><TAB>` (empty species and support).
 
 - With `--graceful`, exit code is **0**.
 
@@ -567,19 +553,20 @@ Behavior:
 
 ### 8.1 Progress output (stderr)
 
-Only when `--outdir` is used (directory mode or single-file mode). For directory mode:
+Only when `--outdir` is used in directory mode:
 
 - For each file:
   - Success: `[OK] <basename>`
   - Failure: `[ERR code=<n>] <basename>: <short message>`
-  - Skip: `[SKIP] <basename>_rmlst.json (exists)` (or appropriate filename)
+  - Skip: `[SKIP] <stem>.json (exists)` (or appropriate filename)
 - Final line:
   - `Done: <ok> ok, <failed> failed, <skipped> skipped.`
 
-In **stdout-only** mode (no `--outdir`):
+In **stdout-only** directory mode (no `--outdir`):
 
-- On success, **no stderr output**.
-- Only errors (and debug output if `--debug`).
+- No per-file progress lines are printed to stderr.
+- JSON mode includes per-file error objects in stdout.
+- Species-only mode skips failed rows unless `--graceful` is enabled.
 
 ### 8.2 Inter-file delay
 
@@ -612,6 +599,7 @@ def identify(
     graceful: bool = False,
     retries: int = 3,
     retry_delay: int = 60,
+    debug: bool = False,
 ) -> dict:
     ...
 ```
@@ -628,7 +616,7 @@ Behavior:
     - Raises Python exceptions corresponding to CLI exit categories (e.g., custom exceptions for invalid FASTA, network error, etc.).
   - If `graceful=True`:
     - Returns `{}` (empty dict) instead of raising.
-- No CLI-only options (like TSV, `--tsv`, etc.) apply here.
+- No CLI-only output options apply here.
 
 #### 9.1.2 `identify_dir`
 
@@ -643,6 +631,7 @@ def identify_dir(
     graceful: bool = False,
     retries: int = 3,
     retry_delay: int = 60,
+    debug: bool = False,
 ) -> Iterator[Tuple[str, Dict]]:
     ...
 ```
@@ -661,16 +650,21 @@ Behavior:
   - Raise immediately (corresponds to CLI exit code 2).
 - Each success yields `(basename, api_json_dict)`.
 
-#### 9.1.3 `extract_species`
+#### 9.1.3 Species formatting helpers
+
+Species formatting helpers are provided by `rmlst_cli.formats`, not `rmlst_cli.api`.
 
 ```python
 def extract_species(api_json: dict) -> str:
     ...
+
+def extract_species_and_support(api_json: dict) -> tuple[str, str]:
+    ...
 ```
 
 - Implements the species extraction rules in §2.3.2.
-- Returns a comma-separated string of unique species, ordered by descending probability.
-- Returns `""` if no predictions.
+- Returns comma-separated unique species and support values, ordered by descending support.
+- Returns empty strings if no predictions.
 
 ### 9.2 Error mapping
 
@@ -687,21 +681,20 @@ Proposed layout:
 rmlst_cli/
 ├─ src/
 │  └─ rmlst_cli/
-│     ├─ __init__.py          # __version__ from hatch-vcs, API re-exports
+│     ├─ __init__.py          # __version__ from hatch-vcs
 │     ├─ cli.py               # Click CLI implementation
-│     ├─ api.py               # identify, identify_dir, extract_species
+│     ├─ api.py               # identify, identify_dir
 │     ├─ http.py              # HTTP client and retry/fallback logic
 │     ├─ fasta.py             # FASTA parsing, validation, sort/trim
 │     ├─ io.py                # Directory scanning, file/directory resolution
-│     ├─ formats.py           # JSON/TSV rendering, normalization
-│     └─ types.py             # Optional typed models
+│     └─ formats.py           # JSON formatting and species/support extraction
 ├─ tests/
 │  ├─ test_cli.py
 │  ├─ test_api.py
 │  ├─ fixtures/
-│  │  ├─ small_*.fasta        # Provided by maintainer
-│  │  └─ large_synthetic.fasta
-│  └─ helpers.py
+│  │  ├─ real_valid.fasta
+│  │  ├─ real_valid_small.fasta
+│  │  └─ real_large.fasta
 ├─ README.md
 ├─ LICENSE
 ├─ pyproject.toml
@@ -771,12 +764,12 @@ Keep README concise and to the point, with the following sections:
    - Single FASTA example.
    - Directory example.
 3. **Output modes**
-   - Full JSON, `--species-only[=HEADER]`, `--tsv[=HEADER]`.
+   - Full JSON and `--species-only[=HEADER]`.
 4. **Examples** (includes 5,000-contig trimming example)
 5. **Exit codes**
    - Table mapping codes to meaning.
 6. **Python API usage**
-   - `identify`, `identify_dir`, `extract_species`.
+   - `identify`, `identify_dir`, and species helpers from `rmlst_cli.formats`.
 
 Use the example block already agreed on in the conversation.
 
@@ -793,6 +786,6 @@ Use the example block already agreed on in the conversation.
     - `Povilas Matusevicius <pmat@ssi.dk>`
   - `maintainers` similar.
   - `project.urls`:
-    - `Homepage`: `https://github.com/ssi-dk/rmlst_cli`
-    - `Source`: `https://github.com/ssi-dk/rmlst_cli`
-    - `Issues`: `https://github.com/ssi-dk/rmlst_cli/issues`
+    - `Homepage`: `https://github.com/ssi-dk/rmlst-cli`
+    - `Source`: `https://github.com/ssi-dk/rmlst-cli`
+    - `Issues`: `https://github.com/ssi-dk/rmlst-cli/issues`

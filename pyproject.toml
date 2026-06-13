@@ -15,9 +15,9 @@ authors = [
 maintainers = [
   { name = "Povilas Matusevicius", email = "pmat@ssi.dk" },
 ]
-urls.Homepage = "https://github.com/ssi-dk/rmlst_cli"
-urls.Source = "https://github.com/ssi-dk/rmlst_cli"
-urls.Issues = "https://github.com/ssi-dk/rmlst_cli/issues"
+urls.Homepage = "https://github.com/ssi-dk/rmlst-cli"
+urls.Source = "https://github.com/ssi-dk/rmlst-cli"
+urls.Issues = "https://github.com/ssi-dk/rmlst-cli/issues"
 
 dependencies = [
   "click",
@@ -37,6 +37,17 @@ version-file = "src/rmlst_cli/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/rmlst_cli"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "/.github",
+  "/.gitignore",
+  "/.pre-commit-config.yaml",
+  "/galaxy",
+  "/pixi.toml",
+  "/recipe",
+  "/tests",
+]
 
 [tool.pytest.ini_options]
 markers = [

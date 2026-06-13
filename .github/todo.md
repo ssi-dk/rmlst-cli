@@ -4,7 +4,7 @@ This is a living implementation checklist. Keep it up to date as work progresses
 
 ## 1. Repo setup
 
-- [x] Create/rename repo to `https://github.com/ssi-dk/rmlst_cli`.
+- [x] Create/rename repo to `https://github.com/ssi-dk/rmlst-cli`.
 - [x] Add `LICENSE` (MIT) with 2025 and Povilas Matusevicius.
 - [x] Add `pyproject.toml` with:
   - [x] Hatchling as backend.

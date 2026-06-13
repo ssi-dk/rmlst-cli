@@ -1,7 +1,7 @@
-<tool id="rmlst_cli" name="rMLST Identify" version="1.0+galaxy0">
+<tool id="rmlst_cli" name="rMLST" version="1.1+galaxy0">
     <description>Identify species using the rMLST API</description>
     <requirements>
-        <requirement type="package" version="1.0">rmlst-cli</requirement>
+        <requirement type="package" version="1.1">rmlst-cli</requirement>
     </requirements>
     <command detect_errors="exit_code"><![CDATA[
         rmlst 
@@ -17,12 +17,12 @@
 
         $trim_to_5000
         $graceful
-        --retries $retries
-        --retry-delay $retry_delay
+        --retries $advanced.retries
+        --retry-delay $advanced.retry_delay
         --force
         
-        #if $uri:
-            --uri '$uri'
+        #if $advanced.uri:
+            --uri '$advanced.uri'
         #end if
     ]]></command>
     <inputs>
@@ -31,7 +31,7 @@
         <conditional name="mode_cond">
             <param name="mode" type="select" label="Output Format">
                 <option value="json" selected="true">JSON</option>
-                <option value="species">Species Name Only</option>
+                <option value="species">Species and support</option>
             </param>
             <when value="json"/>
             <when value="species">
@@ -79,7 +79,7 @@ This tool identifies species from FASTA files using the PubMLST rMLST API.
 **Outputs**
 
 *   **JSON**: Full API response.
-*   **Species Only**: Species name and support percentage in two columns.
+*   **Species and support**: Species name and support percentage in two columns.
 
 **Limits**
 

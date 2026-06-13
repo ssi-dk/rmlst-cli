@@ -26,6 +26,14 @@ def test_identify_invalid_fasta(tmp_path):
         api.identify(str(fasta_file))
 
 
+def test_identify_empty_sequence_is_invalid(tmp_path):
+    fasta_file = tmp_path / "empty.fasta"
+    fasta_file.write_text(">seq1\n")
+
+    with pytest.raises(InvalidFastaError):
+        api.identify(str(fasta_file))
+
+
 def test_identify_graceful_failure(tmp_path):
     fasta_file = tmp_path / "test.fasta"
     fasta_file.write_text(">seq1\nATGC")

@@ -3,6 +3,8 @@ import time
 import click
 import os
 import traceback
+from dataclasses import dataclass
+from typing import Any, Optional
 
 from . import api, io, formats, __version__
 from .fasta import InvalidFastaError, TooManyContigsError
@@ -17,6 +19,15 @@ EXIT_NETWORK_ERROR = 4
 EXIT_HTTP_ERROR = 5
 EXIT_FS_ERROR = 7
 EXIT_SIGINT = 130
+
+
+@dataclass
+class DirectoryResult:
+    basename: str
+    result: Optional[dict[str, Any]]
+    error: Optional[dict[str, Any]]
+    is_graceful_failure: bool = False
+    progress_message: Optional[str] = None
 
 
 def print_error(msg: str, exit_code: int, debug: bool = False):
@@ -45,7 +56,7 @@ def handle_exception(e: Exception, debug: bool):
         print_error(f"unexpected error: {e}", EXIT_UNEXPECTED, debug)
 
 
-def get_species_headers(header_str: str) -> tuple[str, str]:
+def get_species_headers(header_str: Optional[str]) -> tuple[str, str]:
     """
     Parse header string into two headers for species and support columns.
     Accepts space or comma separated values.
@@ -80,6 +91,116 @@ def get_exit_code(e: Exception) -> int:
     if isinstance(e, OSError):
         return EXIT_FS_ERROR
     return EXIT_UNEXPECTED
+
+
+def get_error_message(e: Exception) -> str:
+    if isinstance(e, InvalidFastaError):
+        return "invalid FASTA or no sequences"
+    if isinstance(e, TooManyContigsError):
+        return "more than 5000 contigs; use --trim-to-5000"
+    if isinstance(e, RmlstNetworkError):
+        return "network error"
+    if isinstance(e, RmlstHttpError):
+        return f"HTTP {e.status_code}"
+    return str(e)
+
+
+def format_species_result(result: dict[str, Any], header: Optional[str] = None) -> str:
+    names, supports = formats.extract_species_and_support(result)
+    species_header, support_header = get_species_headers(header)
+    return f"{species_header}\t{support_header}\n{names}\t{supports}"
+
+
+def format_directory_species(
+    results: list[DirectoryResult], header: Optional[str], graceful: bool
+) -> str:
+    species_header, support_header = get_species_headers(header)
+    lines = [f"file\t{species_header}\t{support_header}"]
+
+    for item in results:
+        if item.error and not graceful:
+            continue
+        species, support = "", ""
+        if item.result:
+            species, support = formats.extract_species_and_support(item.result)
+        lines.append(f"{item.basename}\t{species}\t{support}")
+
+    return "\n".join(lines)
+
+
+def format_directory_json(results: list[DirectoryResult], graceful: bool) -> str:
+    use_wrapped = graceful
+    if not use_wrapped:
+        for item in results:
+            if item.result is not None and not formats.extract_species(item.result):
+                use_wrapped = True
+                break
+
+    json_out: list[dict[str, Any]] = []
+    for item in results:
+        if use_wrapped:
+            if item.is_graceful_failure:
+                json_out.append({"file": item.basename, "result": None})
+            elif item.error:
+                json_out.append({"file": item.basename, "error": item.error})
+            else:
+                json_out.append({"file": item.basename, "result": item.result})
+        else:
+            if item.error:
+                json_out.append({"file": item.basename, "error": item.error})
+            elif item.result is not None:
+                json_out.append(item.result)
+
+    return formats.format_json(json_out)
+
+
+def identify_directory_file(
+    file_path: str,
+    *,
+    uri: str,
+    retries: int,
+    retry_delay: int,
+    trim_to_5000: bool,
+    graceful: bool,
+    debug: bool,
+) -> tuple[DirectoryResult, bool, int]:
+    basename = os.path.basename(file_path)
+
+    try:
+        result = api.identify(
+            file_path,
+            uri=uri,
+            trim_to_5000=trim_to_5000,
+            graceful=False,
+            retries=retries,
+            retry_delay=retry_delay,
+            debug=debug,
+        )
+        return DirectoryResult(basename=basename, result=result, error=None), True, 0
+    except Exception as e:
+        code = get_exit_code(e)
+        if graceful:
+            return (
+                DirectoryResult(
+                    basename=basename,
+                    result={},
+                    error=None,
+                    is_graceful_failure=True,
+                    progress_message=get_error_message(e),
+                ),
+                False,
+                code,
+            )
+        return (
+            DirectoryResult(
+                basename=basename,
+                result=None,
+                error={"code": code, "message": str(e)},
+                progress_message=get_error_message(e),
+            ),
+            False,
+            code,
+        )
 
 
 @click.command()
@@ -212,30 +333,22 @@ def handle_single_file(
         click.echo(f"[SKIP] {os.path.basename(final_out_path)} (exists)", err=True)
         sys.exit(EXIT_SUCCESS)
 
-    try:
-        result = api.identify(
-            fasta_path,
-            uri=uri,
-            trim_to_5000=trim_to_5000,
-            graceful=graceful,
-            retries=retries,
-            retry_delay=retry_delay,
-            debug=debug,
-        )
-    except Exception as e:
-        # If graceful=True, api.identify returns {}, so we won't be here.
-        # If we are here, graceful=False.
-        raise e
+    result = api.identify(
+        fasta_path,
+        uri=uri,
+        trim_to_5000=trim_to_5000,
+        graceful=graceful,
+        retries=retries,
+        retry_delay=retry_delay,
+        debug=debug,
+    )
 
     # Format output
     content = ""
     if mode == "json":
         content = formats.format_json(result)
     else:
-        # mode == "species"
-        names, supports = formats.extract_species_and_support(result)
-        species_header, support_header = get_species_headers(header)
-        content = f"{species_header}\t{support_header}\n{names}\t{supports}"
+        content = format_species_result(result, header)
 
     # Write output
     if final_out_path:
@@ -295,63 +408,33 @@ def handle_directory(
                 skipped_count += 1
                 continue
 
-        file_result = None
-        file_error = None
-        is_graceful_failure = False
+        result, ok, code = identify_directory_file(
+            file_path,
+            uri=uri,
+            trim_to_5000=trim_to_5000,
+            graceful=graceful,
+            retries=retries,
+            retry_delay=retry_delay,
+            debug=debug,
+        )
 
-        try:
-            res = api.identify(
-                file_path,
-                uri=uri,
-                trim_to_5000=trim_to_5000,
-                graceful=False,
-                retries=retries,
-                retry_delay=retry_delay,
-                debug=debug,
-            )
-            file_result = res
+        if ok:
             ok_count += 1
             if out_path:
                 click.echo(f"[OK] {basename}", err=True)
-
-        except Exception as e:
+        else:
             failed_count += 1
-            code = get_exit_code(e)
             highest_exit_code = max(highest_exit_code, code)
-
             if out_path:
-                msg = str(e)
-                if isinstance(e, InvalidFastaError):
-                    msg = "invalid FASTA or no sequences"
-                elif isinstance(e, TooManyContigsError):
-                    msg = "more than 5000 contigs; use --trim-to-5000"
-                elif isinstance(e, RmlstNetworkError):
-                    msg = "network error"
-                elif isinstance(e, RmlstHttpError):
-                    msg = f"HTTP {e.status_code}"
-
+                msg = result.progress_message or ""
                 click.echo(f"[ERR code={code}] {basename}: {msg}", err=True)
 
-            if graceful:
-                is_graceful_failure = True
-                file_result = {}
-            else:
-                file_error = {"code": code, "message": str(e)}
-
-        # Collect results
-        results.append(
-            {
-                "basename": basename,
-                "result": file_result,
-                "error": file_error,
-                "is_graceful_failure": is_graceful_failure,
-            }
-        )
+        results.append(result)
 
         # Write per-file JSON
-        if out_path and mode == "json" and file_result is not None:
+        if out_path and mode == "json" and result.result is not None:
             derived = io.derive_output_path(file_path, out_path, ".json")
-            io.atomic_write(derived, formats.format_json(file_result))
+            io.atomic_write(derived, formats.format_json(result.result))
 
     # Final Output / Summary
     if out_path:
@@ -361,70 +444,17 @@ def handle_directory(
         )
 
         if mode != "json":
-            # mode == "species"
-            species_header, support_header = get_species_headers(header)
-            lines = [f"file\t{species_header}\t{support_header}"]
-            for item in results:
-                if item["error"] and not graceful:
-                    continue
-                species, support = "", ""
-                if item["result"]:
-                    species, support = formats.extract_species_and_support(
-                        item["result"]
-                    )
-                lines.append(f"{item['basename']}\t{species}\t{support}")
-
-            content = "\n".join(lines)
+            content = format_directory_species(results, header, graceful)
             io.atomic_write(summary_path, content)
 
     else:
         # Stdout
         if mode == "json":
-            use_wrapped = graceful
-            if not use_wrapped:
-                for item in results:
-                    if item["result"] is not None:
-                        if not formats.extract_species(item["result"]):
-                            use_wrapped = True
-                            break
-
-            json_out = []
-            for item in results:
-                if use_wrapped:
-                    if item["is_graceful_failure"]:
-                        json_out.append({"file": item["basename"], "result": None})
-                    elif item["error"]:
-                        json_out.append(
-                            {"file": item["basename"], "error": item["error"]}
-                        )
-                    else:
-                        json_out.append(
-                            {"file": item["basename"], "result": item["result"]}
-                        )
-                else:
-                    if item["error"]:
-                        json_out.append(
-                            {"file": item["basename"], "error": item["error"]}
-                        )
-                    elif item["result"] is not None:
-                        json_out.append(item["result"])
-
-            click.echo(formats.format_json(json_out))
+            click.echo(format_directory_json(results, graceful))
 
         else:
             if mode == "species":
-                # Two columns: species and support
-                species_header, support_header = get_species_headers(header)
-                click.echo(f"file\t{species_header}\t{support_header}")
-                for item in results:
-                    if item["error"] and not graceful:
-                        continue
-                    species, support = "", ""
-                    if item["result"]:
-                        species, support = formats.extract_species_and_support(
-                            item["result"]
-                        )
-                    click.echo(f"{item['basename']}\t{species}\t{support}")
+                click.echo(format_directory_species(results, header, graceful))
             else:
                 # JSON mode already handled above
                 pass

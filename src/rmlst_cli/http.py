@@ -1,4 +1,5 @@
 import base64
+import sys
 import time
 import requests
 from typing import Dict, Any
@@ -9,7 +10,7 @@ DEFAULT_URI = (
 )
 FALLBACK_URI = "https://rest.pubmlst.org/db/pubmlst_rmlst_seqdef/schemes/1/sequence"
 
-USER_AGENT = f"rmlst-cli/{__version__} (+https://github.com/ssi-dk/rmlst_cli; maintainer: pmat@ssi.dk)"
+USER_AGENT = f"rmlst-cli/{__version__} (+https://github.com/ssi-dk/rmlst-cli; maintainer: pmat@ssi.dk)"
 
 
 class RmlstNetworkError(Exception):
@@ -43,7 +44,10 @@ def _make_request(
         attempt += 1
         try:
             if debug:
-                print(f"DEBUG: Attempt {attempt}, URI: {uri}, Timeout: (30, 300)")
+                print(
+                    f"DEBUG: Attempt {attempt}, URI: {uri}, Timeout: (30, 300)",
+                    file=sys.stderr,
+                )
                 start_time = time.time()
 
             response = session.post(
@@ -59,7 +63,8 @@ def _make_request(
 
             if debug:
                 print(
-                    f"DEBUG: Response {response.status_code} in {time.time() - start_time:.2f}s"
+                    f"DEBUG: Response {response.status_code} in {time.time() - start_time:.2f}s",
+                    file=sys.stderr,
                 )
 
             if response.status_code == 200:

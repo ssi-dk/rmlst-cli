@@ -1,5 +1,5 @@
 {% set name = "rmlst-cli" %}
-{% set version = "1.0" %}
+{% set version = "1.1" %}
 
 package:
   name: {{ name|lower }}
@@ -7,14 +7,14 @@ package:
 
 source:
   url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/rmlst_cli-{{ version }}.tar.gz
-  sha256: 4720ae922157ea0195a862e6bb486e8fe6c4fd334ce9ac23080c7326733c27de
+  sha256: 20651b38aad7625e96a7fb85858495d12197fdf5c2deebbdbd10f665c96df553
 
 build:
   number: 0
   noarch: python
   script_env:
     - SETUPTOOLS_SCM_PRETEND_VERSION={{ version }}
-  script: {{ PYTHON }} -m pip install . -vv
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
   entry_points:
     - rmlst = rmlst_cli.cli:main
     - rmlst-cli = rmlst_cli.cli:main
