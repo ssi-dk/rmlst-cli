@@ -1,5 +1,6 @@
 {% set name = "rmlst-cli" %}
 {% set version = "1.1" %}
+{% set python_min = "3.9" %}
 
 package:
   name: {{ name|lower }}
@@ -12,6 +13,8 @@ source:
 build:
   number: 0
   noarch: python
+  run_exports:
+    - {{ pin_subpackage(name|lower, max_pin="x") }}
   script_env:
     - SETUPTOOLS_SCM_PRETEND_VERSION={{ version }}
   script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
@@ -21,18 +24,19 @@ build:
 
 requirements:
   host:
-    - python >=3.9,<3.15
+    - python {{ python_min }}
     - pip
     - hatchling
     - hatch-vcs
-    - git
   run:
-    - python >=3.9,<3.15
+    - python >={{ python_min }},<3.15
     - click
     - requests
     - biopython
 
 test:
+  requires:
+    - python {{ python_min }}
   imports:
     - rmlst_cli
   commands:
