@@ -1,8 +1,13 @@
-<tool id="rmlst_cli" name="rMLST" version="1.1+galaxy0">
+<tool id="rmlst_cli" name="rMLST" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="24.0">
     <description>Identify species using the rMLST API</description>
-    <requirements>
-        <requirement type="package" version="1.1">rmlst-cli</requirement>
-    </requirements>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <creator>
+        <person givenName="Povilas" familyName="Matusevicius" />
+        <organization name="Statens Serum Institut" url="https://www.ssi.dk/" />
+    </creator>
+    <expand macro="requirements" />
     <command detect_errors="exit_code"><![CDATA[
         rmlst 
         --fasta '$input_fasta'
@@ -10,8 +15,8 @@
         
         #if $mode_cond.mode == 'species':
             --species-only
-            #if $mode_cond.header:
-                '$mode_cond.header'
+            #if $mode_cond.custom_header_cond.use_custom_header == 'true':
+                '$mode_cond.custom_header_cond.species_header,$mode_cond.custom_header_cond.support_header'
             #end if
         #end if
 
@@ -35,7 +40,17 @@
             </param>
             <when value="json"/>
             <when value="species">
-                <param name="header" type="text" optional="true" label="Custom Header" help="Optional headers for species and support columns (e.g., 'Species Support')" />
+                <conditional name="custom_header_cond">
+                    <param name="use_custom_header" type="select" label="Custom header" help="Replace the default species and support column headers.">
+                        <option value="false" selected="true">No</option>
+                        <option value="true">Yes</option>
+                    </param>
+                    <when value="false"/>
+                    <when value="true">
+                        <param name="species_header" type="text" value="species" label="Species column header" />
+                        <param name="support_header" type="text" value="support" label="Support column header" />
+                    </when>
+                </conditional>
             </when>
         </conditional>
 
@@ -58,13 +73,39 @@
     <tests>
         <test>
             <param name="input_fasta" value="real_valid.fasta" />
-            <param name="mode" value="json" />
-            <output name="output_file" file="output_json.json" ftype="json" compare="contains" />
+            <conditional name="mode_cond">
+                <param name="mode" value="json" />
+            </conditional>
+            <output name="output_file" ftype="json">
+                <assert_contents>
+                    <has_text text="exact_matches" />
+                    <has_text text="Clostridioides difficile" />
+                </assert_contents>
+            </output>
         </test>
         <test>
             <param name="input_fasta" value="real_valid.fasta" />
-            <param name="mode" value="species" />
+            <conditional name="mode_cond">
+                <param name="mode" value="species" />
+            </conditional>
             <output name="output_file" file="output_species.txt" ftype="tabular" />
+        </test>
+        <test>
+            <param name="input_fasta" value="real_valid.fasta" />
+            <conditional name="mode_cond">
+                <param name="mode" value="species" />
+                <conditional name="custom_header_cond">
+                    <param name="use_custom_header" value="true" />
+                    <param name="species_header" value="organism" />
+                    <param name="support_header" value="confidence" />
+                </conditional>
+            </conditional>
+            <output name="output_file" ftype="tabular">
+                <assert_contents>
+                    <has_line line="organism&#009;confidence" />
+                    <has_line line="Clostridioides difficile&#009;100" />
+                </assert_contents>
+            </output>
         </test>
     </tests>
     <help><![CDATA[
@@ -85,16 +126,5 @@ This tool identifies species from FASTA files using the PubMLST rMLST API.
 
 The rMLST API has a limit of 5,000 contigs. Use the "Trim to 5000 contigs" option to automatically filter your input if necessary.
     ]]></help>
-    <citations>
-        <citation type="bibtex">
-@misc{rmlst_cli,
-  author = {Povilas Matusevicius},
-  title = {rmlst-cli},
-  year = {2025},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/ssi-dk/rmlst-cli}}
-}
-        </citation>
-    </citations>
+    <expand macro="citations" />
 </tool>
