@@ -1,16 +1,22 @@
-<tool id="rmlst_cli" name="rMLST" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="24.0">
+<tool id="rmlst_cli" name="rMLST" version="@TOOL_VERSION@+galaxy@VERSION_SUFFIX@" profile="@PROFILE@">
     <description>Identify species using the rMLST API</description>
     <macros>
         <import>macros.xml</import>
     </macros>
-    <creator>
-        <person givenName="Povilas" familyName="Matusevicius" />
-        <organization name="Statens Serum Institut" url="https://www.ssi.dk/" />
-    </creator>
+    <expand macro="creator" />
     <expand macro="requirements" />
     <command detect_errors="exit_code"><![CDATA[
+        #if $input_fasta.is_of_type('fasta.gz'):
+            gunzip -c '$input_fasta' > input_fasta.fa &&
+        #end if
+
         rmlst 
-        --fasta '$input_fasta'
+        --fasta
+        #if $input_fasta.is_of_type('fasta.gz'):
+            input_fasta.fa
+        #else:
+            '$input_fasta'
+        #end if
         --output '$output_file'
         
         #if $mode_cond.mode == 'species':
@@ -31,7 +37,7 @@
         #end if
     ]]></command>
     <inputs>
-        <param name="input_fasta" type="data" format="fasta" label="Input FASTA file" />
+        <param name="input_fasta" type="data" format="fasta,fasta.gz" label="Input FASTA file" />
         
         <conditional name="mode_cond">
             <param name="mode" type="select" label="Output Format">
@@ -47,8 +53,26 @@
                     </param>
                     <when value="false"/>
                     <when value="true">
-                        <param name="species_header" type="text" value="species" label="Species column header" />
-                        <param name="support_header" type="text" value="support" label="Support column header" />
+                        <param name="species_header" type="text" value="species" label="Species column header">
+                            <sanitizer>
+                                <valid initial="string.ascii_letters,string.digits">
+                                    <add value="_" />
+                                    <add value="-" />
+                                    <add value="." />
+                                </valid>
+                            </sanitizer>
+                            <validator type="regex" message="Use only letters, numbers, underscores, hyphens, or dots.">^[A-Za-z0-9_.-]+$</validator>
+                        </param>
+                        <param name="support_header" type="text" value="support" label="Support column header">
+                            <sanitizer>
+                                <valid initial="string.ascii_letters,string.digits">
+                                    <add value="_" />
+                                    <add value="-" />
+                                    <add value="." />
+                                </valid>
+                            </sanitizer>
+                            <validator type="regex" message="Use only letters, numbers, underscores, hyphens, or dots.">^[A-Za-z0-9_.-]+$</validator>
+                        </param>
                     </when>
                 </conditional>
             </when>
@@ -58,8 +82,8 @@
         <param name="graceful" type="boolean" truevalue="--graceful" falsevalue="" checked="false" label="Graceful failure" help="Do not exit with error on API failures, output empty result instead." />
         
         <section name="advanced" title="Advanced Options" expanded="false">
-            <param name="retries" type="integer" value="3" min="0" label="Number of retries" />
-            <param name="retry_delay" type="integer" value="60" min="0" label="Retry delay (seconds)" />
+            <param argument="--retries" type="integer" value="3" min="0" label="Number of retries" />
+            <param argument="--retry-delay" type="integer" value="60" min="0" label="Retry delay (seconds)" />
             <param name="uri" type="text" optional="true" label="Custom API URI" help="Leave empty to use the default rMLST API." />
         </section>
     </inputs>
@@ -71,7 +95,7 @@
         </data>
     </outputs>
     <tests>
-        <test>
+        <test expect_num_outputs="1">
             <param name="input_fasta" value="real_valid.fasta" />
             <conditional name="mode_cond">
                 <param name="mode" value="json" />
@@ -83,14 +107,21 @@
                 </assert_contents>
             </output>
         </test>
-        <test>
+        <test expect_num_outputs="1">
             <param name="input_fasta" value="real_valid.fasta" />
             <conditional name="mode_cond">
                 <param name="mode" value="species" />
             </conditional>
             <output name="output_file" file="output_species.txt" ftype="tabular" />
         </test>
-        <test>
+        <test expect_num_outputs="1">
+            <param name="input_fasta" value="real_valid.fasta.gz" ftype="fasta.gz" />
+            <conditional name="mode_cond">
+                <param name="mode" value="species" />
+            </conditional>
+            <output name="output_file" file="output_species.txt" ftype="tabular" />
+        </test>
+        <test expect_num_outputs="1">
             <param name="input_fasta" value="real_valid.fasta" />
             <conditional name="mode_cond">
                 <param name="mode" value="species" />
